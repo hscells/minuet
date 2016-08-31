@@ -179,7 +179,6 @@ func BreedBars(bars []Bar, v map[string]int) []Bar {
 		}
 	}
 
-	log.Println(parents)
 
 	barsMap := make(map[string]Bar, len(bars))
 	for i := range bars {
@@ -231,8 +230,6 @@ func Conduct() {
 		}
 
 		c++
-
-		log.Println(c)
 
 		if c >= numBars {
 			// copy the votes and notes before deleting
