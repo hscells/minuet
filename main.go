@@ -12,6 +12,7 @@ import (
 	"time"
 	"io/ioutil"
 	"github.com/satori/go.uuid"
+	"os"
 )
 
 // TODO: note can also have a volume
@@ -294,5 +295,10 @@ func main() {
 
 	log.Println("Started Server!")
 
-	log.Fatal(http.ListenAndServe(":8080", router))
+	port := ":8080"
+	if os.Getenv("PORT") == "" {
+		port = ":" + os.Getenv("PORT")
+	}
+
+	log.Fatal(http.ListenAndServe(port, router))
 }
