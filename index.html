@@ -8,15 +8,18 @@
 </head>
 <body>
 <div id="bar-id"></div>
-<div id="playing"></div>
+<button id="vote">I like this</button>
 <script>
     window.onload = function() {
         var barEl = document.getElementById("bar-id");
-        var noteEl = document.getElementById("playing");
+        var voteEl = document.getElementById("vote");
+        var currentBar = "";
 
         var conduct = function() {
             getBar(function(bar) {
-                barEl.innerText = bar["id"];
+                voteEl.disabled = false;
+                currentBar = bar["id"];
+                barEl.innerText = currentBar;
                 playNotes(bar["notes"])
             });
         };
@@ -34,14 +37,25 @@
             xhr.send();
         };
 
+        var voteBar = function(callback) {
+            var xhr = new XMLHttpRequest();
+            xhr.open("get", "/vote/" + currentBar, true);
+            xhr.responseType = "json";
+            xhr.onload = function() {
+                var status = xhr.status;
+                if (status == 200) {
+                    callback(xhr.response)
+                }
+            };
+            xhr.send();
+        };
+
         var playNotes = function(notes) {
             if (notes.length == 0) {
                 conduct()
             } else {
                 var note = notes[0];
-                playNote(note["note"], note["velocity"], note["end"], 0.25, function(synth) {
-                    // I think this disposes of the synth object form before
-                    synth.allSoundOff();
+                playNote(note["note"], note["velocity"], note["end"], 0.25, function() {
                     playNotes(notes.slice(1))
                 });
             }
@@ -50,8 +64,14 @@
         var playNote = function(note, velocity, end, mul, callback) {
             var synth = T("OscGen", {wave:"sin", mul: 1, env:T("perc", {r:(1 - end) * 1000, ar:true})});
             synth.noteOn(note, velocity);
-            synth.play().on("ended", function(sythn) {return callback(synth)})
+            synth.play().on("ended", callback)
         };
+
+        voteEl.addEventListener("click", function() {
+            voteBar(function() {
+                voteEl.disabled = true;
+            });
+        });
 
         conduct()
 

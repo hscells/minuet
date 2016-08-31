@@ -83,15 +83,15 @@ func GenerateNote() Note {
 func GenerateBars() []Bar {
 	bars := make([]Bar, numBars)
 	for i := 0; i < numBars; i++ {
-		m := rand.Intn(numNotes) + 2
+		m := rand.Intn(numNotes) + numNotes
 		b := Bar{}
 		b.Notes = make([]Note, m)
 		for i := 0; i < m; i++ {
 			b.Notes[i] = GenerateNote()
 		}
 		b.Id = uuid.NewV4().String()
+		votes.Set(b.Id, 0)
 		bars[i] = b
-		votes.Set(b.Id, rand.Intn(100))
 	}
 	return bars
 }
@@ -144,37 +144,47 @@ func ReproduceNotes(mother, father Note) Note {
 
 func BreedBars(bars []Bar, v map[string]int) []Bar {
 	log.Println("starting to breed new notes")
-
 	// new slice of bars
 	newBars := make([]Bar, len(bars))
-
-	// inverted votes index
-	invertedIndex := make(VoteList, len(v))
 	parents := []string{}
-	i := 0
-	avgVotes := 0
-	for k, e := range v {
-		invertedIndex[i] = Vote{Key: k, Value: e}
-		avgVotes += e
-		i++
+
+	totalVotes := 0
+	for _, e := range v {
+		totalVotes += e
 	}
-	avgVotes = avgVotes / len(v)
 
-	sort.Sort(sort.Reverse(invertedIndex))
+	if totalVotes > 0 {
+		// inverted votes index
+		invertedIndex := make(VoteList, len(v))
+		i := 0
+		avgVotes := 0
+		for k, e := range v {
+			invertedIndex[i] = Vote{Key: k, Value: e}
+			avgVotes += e
+			i++
+		}
+		avgVotes = avgVotes / len(v)
 
-	for i := range invertedIndex {
-		vote := invertedIndex.Get(i)
-		if vote.Value < avgVotes {
-			parents = append(parents, vote.Key)
+		sort.Sort(sort.Reverse(invertedIndex))
+
+		for i := range invertedIndex {
+			vote := invertedIndex.Get(i)
+			if vote.Value > avgVotes {
+				parents = append(parents, vote.Key)
+			}
+		}
+	} else {
+		for i := range bars {
+			parents = append(parents, bars[i].Id)
 		}
 	}
 
+	log.Println(parents)
 
 	barsMap := make(map[string]Bar, len(bars))
 	for i := range bars {
 		barsMap[bars[i].Id] = bars[i]
 	}
-
 	parentsLen := len(parents)
 	parentBars := make(map[string]Bar, parentsLen)
 	for _, parent := range parents {
@@ -184,7 +194,7 @@ func BreedBars(bars []Bar, v map[string]int) []Bar {
 	}
 
 	for i := 0; i < numBars; i++ {
-		m := rand.Intn(numNotes) + 2
+		m := rand.Intn(numNotes) + numNotes
 		b := Bar{}
 		b.Notes = make([]Note, m)
 
@@ -196,7 +206,7 @@ func BreedBars(bars []Bar, v map[string]int) []Bar {
 			b.Notes[j] = ReproduceNotes(mother, father)
 		}
 		b.Id = uuid.NewV4().String()
-		votes.Set(b.Id, rand.Intn(100))
+		votes.Set(b.Id, 0)
 		newBars[i] = b
 	}
 
@@ -222,7 +232,9 @@ func Conduct() {
 
 		c++
 
-		if c == numBars {
+		log.Println(c)
+
+		if c >= numBars {
 			// copy the votes and notes before deleting
 			v := make(map[string]int, votes.Count())
 			for i, e := range votes.Items() {
@@ -255,10 +267,12 @@ func Index(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 }
 
 func VoteBar(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	noteId := p.ByName("noteId")
-	votes.Set(noteId, votes.Get(noteId) + 1)
-	// TODO: somehow need to vote up the current bar.
-	// this needs to be renamed to VoteOnBar
+	barId := p.ByName("barId")
+	if currentVotes, ok := votes.Get(barId); ok {
+		votes.Set(barId, currentVotes.(int) + 1)
+	} else {
+		log.Println("something went wrong")
+	}
 }
 
 func CurrentBar(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
@@ -277,7 +291,7 @@ func main() {
 
 	router.GET("/", Index)
 	router.GET("/bar", CurrentBar)
-	router.GET("/vote/:nodeId", VoteBar)
+	router.GET("/vote/:barId", VoteBar)
 
 	router.ServeFiles("/static/*filepath", http.Dir("static"))
 
