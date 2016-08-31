@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/cnf/structhash"
 	"github.com/julienschmidt/httprouter"
 	"github.com/streamrail/concurrent-map"
 	"log"
@@ -12,6 +11,7 @@ import (
 	"sort"
 	"time"
 	"io/ioutil"
+	"github.com/satori/go.uuid"
 )
 
 // TODO: note can also have a volume
@@ -52,8 +52,6 @@ func (v VoteList) Get(i int) Vote {
 }
 
 var (
-	notes          = cmap.New()
-	// TODO: votes should be for a bar, not a note!
 	votes          = cmap.New()
 	currentBar     = Bar{}
 	numBars        = 10
@@ -76,101 +74,75 @@ func GenerateNote() Note {
 	n := Note{}
 	n.Start = 0
 	n.End = rand.Float32()
-	n.Note = rand.Intn(255)
-	n.Velocity = rand.Intn(255)
-
-	// side effect: adds the note to the list of notes
-	h, err := structhash.Hash(n, 1)
-	if err != nil {
-		log.Panic(err)
-	}
-
-	n.Id = h
-
-	notes.Set(h, n)
-	votes.Set(h, rand.Intn(50))
+	n.Note = rand.Intn(127)
+	n.Velocity = rand.Intn(127)
+	n.Id = uuid.NewV4().String()
 	return n
 }
 
 func GenerateBars() []Bar {
 	bars := make([]Bar, numBars)
 	for i := 0; i < numBars; i++ {
-		m := rand.Intn(numNotes)
+		m := rand.Intn(numNotes) + 2
 		b := Bar{}
 		b.Notes = make([]Note, m)
 		for i := 0; i < m; i++ {
 			b.Notes[i] = GenerateNote()
 		}
-		h, err := structhash.Hash(b, 1)
-		if err != nil {
-			log.Panic(err)
-		}
-		b.Id = h
-
+		b.Id = uuid.NewV4().String()
 		bars[i] = b
-
+		votes.Set(b.Id, rand.Intn(100))
 	}
 	return bars
 }
 
-func ReproduceNotes(parent1, parent2 string, n map[string]Note) Note {
-	note1 := n[parent1]
-	note2 := n[parent2]
+func ReproduceNotes(mother, father Note) Note {
 	child := Note{}
-
 	child.Start = 0
 
 	if RandBool() {
 		if RandBool() {
-			child.End = note1.End
+			child.End = mother.End
 		} else {
-			child.End = note2.End
+			child.End = father.End
 		}
 	} else {
 		child.End = rand.Float32()
 	}
 
 	if RandBool() {
-		child.Note = note1.Note + RandError()
+		child.Note = mother.Note + RandError()
 	} else {
-		child.Note = note2.Note + RandError()
+		child.Note = father.Note + RandError()
 	}
 
 	if RandBool() {
-		child.Velocity = note1.Velocity + RandError()
+		child.Velocity = mother.Velocity + RandError()
 	} else {
-		child.Velocity = note2.Velocity + RandError()
+		child.Velocity = father.Velocity + RandError()
 	}
 
-	// side effect: adds the note to the list of notes
-	h, err := structhash.Hash(child, 1)
-	if err != nil {
-		log.Panic(err)
-	}
-
-	if child.Note > 106 {
-		child.Note = 106
+	if child.Note > 127 {
+		child.Note = 127
 	}
 
 	if child.Note < 22 {
 		child.Note = 22
 	}
 
-	if child.Velocity > 255 {
-		child.Velocity = 255
+	if child.Velocity > 127 {
+		child.Velocity = 127
 	}
 
 	if child.Velocity < 70 {
 		child.Velocity = 70 + randomError
 	}
 
-	child.Id = h
-	notes.Set(h, child)
-	votes.Set(h, rand.Intn(50))
+	child.Id = uuid.NewV4().String()
 	return child
 }
 
-func BreedBars(bars []Bar, v map[string]int, n map[string]Note) []Bar {
+func BreedBars(bars []Bar, v map[string]int) []Bar {
 	log.Println("starting to breed new notes")
 
 	// new slice of bars
@@ -189,7 +161,6 @@ func BreedBars(bars []Bar, v map[string]int, n map[string]Note) []Bar {
 	avgVotes = avgVotes / len(v)
 
 	sort.Sort(sort.Reverse(invertedIndex))
-	//log.Println("index: ", invertedIndex)
 
 	for i := range invertedIndex {
 		vote := invertedIndex.Get(i)
@@ -198,21 +169,34 @@ func BreedBars(bars []Bar, v map[string]int, n map[string]Note) []Bar {
 		}
 	}
 
-	//log.Println("parents: ", parents)
+
+	barsMap := make(map[string]Bar, len(bars))
+	for i := range bars {
+		barsMap[bars[i].Id] = bars[i]
+	}
+
 	parentsLen := len(parents)
+	parentBars := make(map[string]Bar, parentsLen)
+	for _, parent := range parents {
+		if e, ok := barsMap[parent]; ok {
+			parentBars[parent] = e
+		}
+	}
 
 	for i := 0; i < numBars; i++ {
-		m := rand.Intn(numNotes)
+		m := rand.Intn(numNotes) + 2
 		b := Bar{}
 		b.Notes = make([]Note, m)
-		for i := 0; i < m; i++ {
-			b.Notes[i] = ReproduceNotes(parents[rand.Intn(parentsLen)], parents[rand.Intn(parentsLen)], n)
+
+		bar := parentBars[parents[rand.Intn(parentsLen)]]
+
+		for j := 0; j < m; j++ {
+			mother := bar.Notes[rand.Intn(len(bar.Notes))]
+			father := bar.Notes[rand.Intn(len(bar.Notes))]
+			b.Notes[j] = ReproduceNotes(mother, father)
 		}
-		h, err := structhash.Hash(b, 1)
-		if err != nil {
-			log.Panic(err)
-		}
-		b.Id = h
+		b.Id = uuid.NewV4().String()
+		votes.Set(b.Id, rand.Intn(100))
 		newBars[i] = b
 	}
 
@@ -229,7 +213,7 @@ func Conduct() {
 		currentBar = bars[c]
 		bar := bars[c]
 
-		log.Println("current bar", bar)
+		log.Println("current bar", bar.Id)
 		// play the notes on the server
 		for i := 0; i < len(bar.Notes); i++ {
 			note := bar.Notes[i]
@@ -245,16 +229,10 @@ func Conduct() {
 				v[i] = e.(int)
 			}
 
-			n := make(map[string]Note, notes.Count())
-			for i, e := range notes.Items() {
-				n[i] = e.(Note)
-			}
-
-			// clear the notes from the cache
+			// clear the votes from the cache
 			for i := 0; i < numBars; i++ {
-				for j := 0; j < len(bars[i].Notes); j++ {
-					notes.Remove(bars[i].Notes[j].Id)
-					votes.Remove(bars[i].Notes[j].Id)
+				for j := 0; j < len(bars); j++ {
+					votes.Remove(bars[i].Id)
 				}
 			}
 
@@ -262,8 +240,7 @@ func Conduct() {
 			c = 0
 
 			// run genetic algorithm
-			bars = BreedBars(bars, v, n)
-			//log.Println("new bars:", bars)
+			bars = BreedBars(bars, v)
 		}
 	}
 }
@@ -277,8 +254,9 @@ func Index(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	w.Write(file)
 }
 
-func VoteOnNote(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	p.ByName("noteId")
+func VoteBar(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+	noteId := p.ByName("noteId")
+	votes.Set(noteId, votes.Get(noteId) + 1)
 	// TODO: somehow need to vote up the current bar.
 	// this needs to be renamed to VoteOnBar
 }
@@ -299,7 +277,7 @@ func main() {
 
 	router.GET("/", Index)
 	router.GET("/bar", CurrentBar)
-	router.GET("/vote/:nodeId", VoteOnNote)
+	router.GET("/vote/:nodeId", VoteBar)
 
 	router.ServeFiles("/static/*filepath", http.Dir("static"))
 

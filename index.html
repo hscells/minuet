@@ -4,19 +4,7 @@
     <title>unnamed music playing bot</title>
     <meta http-equiv="content-type" content="text/html; charset=utf-8" />
     <!-- polyfill -->
-    <script src="/static/inc/shim/Base64.js" type="text/javascript"></script>
-    <script src="/static/inc/shim/Base64binary.js" type="text/javascript"></script>
-    <script src="/static/inc/shim/WebAudioAPI.js" type="text/javascript"></script>
-    <!-- midi.js package -->
-    <script src="/static/js/midi/audioDetect.js" type="text/javascript"></script>
-    <script src="/static/js/midi/gm.js" type="text/javascript"></script>
-    <script src="/static/js/midi/loader.js" type="text/javascript"></script>
-    <script src="/static/js/midi/plugin.audiotag.js" type="text/javascript"></script>
-    <script src="/static/js/midi/plugin.webaudio.js" type="text/javascript"></script>
-    <script src="/static/js/midi/plugin.webmidi.js" type="text/javascript"></script>
-    <!-- utils -->
-    <script src="/static/js/util/dom_request_xhr.js" type="text/javascript"></script>
-    <script src="/static/js/util/dom_request_script.js" type="text/javascript"></script>
+    <script src="/static/js/timbre.js" type="text/javascript"></script>
 </head>
 <body>
 <div id="bar-id"></div>
@@ -26,20 +14,10 @@
         var barEl = document.getElementById("bar-id");
         var noteEl = document.getElementById("playing");
 
-        MIDI.loadPlugin({
-            soundfontUrl: "/static/soundfont/",
-            instrument: "acoustic_grand_piano",
-            onprogress: function(state, progress) {
-                console.log(state, progress);
-            },
-            onsuccess: function() {
-                conduct()
-            }
-        });
-
         var conduct = function() {
             getBar(function(bar) {
-                playBar(bar)
+                barEl.innerText = bar["id"];
+                playNotes(bar["notes"])
             });
         };
 
@@ -56,29 +34,26 @@
             xhr.send();
         };
 
-        var playBar = function(bar) {
-
-            barEl.innerText = bar["id"];
-            for (var i = 0; i < bar["notes"].length; i++) {
-                var note = bar["notes"][i];
-                window.setTimeout(function(note) {
-                    MIDI.setVolume(0, 127);
-                    MIDI.noteOn(0, note["note"], note["velocity"], note["start"]);
-                    MIDI.noteOff(0, note["note"], note["end"]);
-                }, (1 - note["end"]) * 1000)
+        var playNotes = function(notes) {
+            if (notes.length == 0) {
+                conduct()
+            } else {
+                var note = notes[0];
+                playNote(note["note"], note["velocity"], note["end"], 0.25, function(synth) {
+                    // I think this disposes of the synth object form before
+                    synth.allSoundOff();
+                    playNotes(notes.slice(1))
+                });
             }
-            conduct()
         };
 
-        var playNote = function(note) {
-
-
+        var playNote = function(note, velocity, end, mul, callback) {
+            var synth = T("OscGen", {wave:"sin", mul: 1, env:T("perc", {r:(1 - end) * 1000, ar:true})});
+            synth.noteOn(note, velocity);
+            synth.play().on("ended", function(sythn) {return callback(synth)})
         };
 
-        var sleep = function(duration) {
-            var now = new Date().getTime();
-            while(new Date().getTime() < now + duration){}
-        }
+        conduct()
 
     };
 </script>
